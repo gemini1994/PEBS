@@ -1,5 +1,5 @@
 ifneq ($(KERNELRELEASE),)
-obj-m := pebs_config.o
+obj-m := config.o
 
 else
 KDIR := /lib/modules/$(shell uname -r)/build
