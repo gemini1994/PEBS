@@ -36,70 +36,34 @@ struct debug_store {
     u64 pebs_event_reset[4];
 };
 
-static DEFINE_PER_CPU(struct debug_store *, ds_base);
-
-static struct pebs_v1 pebs_buffer[PEBSBUFFERMAXLEN];
-static struct debug_store ds;
-
-void filewrite(char *filename, char *data){
-    struct file *filp;
-    mm_segment_t fs;
-    filp = filp_open(filename, O_RDWR|O_APPEND, 0644);
-    if(IS_ERR(filp)){
-        printk("open error!\n");
-        return;
-    }
-    fs=get_fs();
-    set_fs(KERNEL_DS);
-    filp->f_op->write(filp,data,strlen(data),&filp->f_pos);
-    set_fs(fs);
-    filp_close(filp,NULL);
-}
-
+//istatic struct debug_store ds;
 static int __init config(void){
-    //struct debug_store *ds = this_cpu_read(ds_base);
-    u64 dsval,eax;
+    struct debug_store *ds;
+    u64 eax;
     //check version
     eax = cpuid_eax(10);
     if ((eax & 0xff) < 3){
         pr_err("Need at least arch_perfmon version 3, your version is %llu\n",(eax && 0xff));
         return -EIO;
     }
+    //printk("PEBS version: %u %d %d %d %d\n",(cap >> 8) & 0xf,sizeof(unsigned int),sizeof(unsigned long),sizeof(unsigned long long),BIT(3));
+    u64 pebs_en,ds_area,evtsel0,evtsel1,evtsel2,evtsel3,evtsel4,evtsel5,evtsel6,evtsel7;
 
-    u64 pebs_en,ds_area,evtsel3;
-    rdmsrl(MSR_IA32_PEBS_ENABLE, pebs_en);
-    rdmsrl(MSR_IA32_DS_AREA, ds_area);
+    rdmsrl(MSR_IA32_DS_AREA, ds_area);\
+    ds = (struct debug_store*)ds_area;
+    rdmsrl(0x186,evtsel0);
+    rdmsrl(0x187,evtsel1);
+    rdmsrl(0x188,evtsel2);
     rdmsrl(0x189,evtsel3);
-    printk("pre msr value: pebs_en: %llu\n ds_area: %llu\n evtsel3: %llu\n",pebs_en,ds_area,evtsel3);
-    //pebs config
-    //rdmsrl(MSR_IA32_DS_AREA, dsval);
-    //ds = (struct debug_store *)dsval;
-    //this_cpu_write(ds_base,ds);
-    ds.pebs_interrupt_threshold = 10000;
-    ds.pebs_absolute_maximum = PEBSBUFFERMAXLEN;
-    ds.pebs_index = 0;
-    ds.pebs_buffer_base = (u64)pebs_buffer;
-    ds.pebs_event_reset[3] = 0xffffffffffff;
-    wrmsrl(MSR_IA32_DS_AREA, (u64)&ds);
-    //enable PMC3 and precise store facility
-    wrmsrl(MSR_IA32_PEBS_ENABLE, 32);//(0xffffffffffffffff & 0x8000000000000008));
-    //MEM_TRANS_RETIRED.PRECISE_STORE
-    //EVENT CODE: 0XCD MASK: 0X02
-    wrmsrl(0x189, (0x02 << 8) + 0xcd);//0x186+3
-    rdmsrl(MSR_IA32_PEBS_ENABLE, pebs_en);
-    rdmsrl(MSR_IA32_DS_AREA, ds_area);
-    rdmsrl(0x189,evtsel3);
-    printk("cur msr value: pebs_en: %llu\n ds_area: %llu\n evtsel3: %llu\n",pebs_en,ds_area,evtsel3);
-    msleep(10000);
-    printk(KERN_INFO "PEBS threshold: %llu, Max: %llu, index: %llu, pebs_buffer_base: %llu\n"
-        ,ds.pebs_interrupt_threshold,ds.pebs_absolute_maximum,ds.pebs_index,ds.pebs_buffer_base);
-    printk(KERN_INFO "pebs record[0] dla: %llu\n",pebs_buffer[0].dla);
-    //enable pebs and precise store
-    //wrmsrl();
-    //filewrite(TARGET_FILE,(char*)&dsval);
-    return 0;
+    rdmsrl(0x190,evtsel4);
+    rdmsrl(0x191,evtsel5);
+    rdmsrl(0x192,evtsel6);
+    rdmsrl(0x193,evtsel7);
+    struct pebs_v1 *pebs_base = (struct pebs_v1*)ds->pebs_buffer_base;
+    printk("evtsel: %llu %llu %llu %llu %llu %llu %llu %llu\n",evtsel0,evtsel1,evtsel2,evtsel3,evtsel4,evtsel5,evtsel6,evtsel7);
+    printk("pebs_buffer_base:%llu,pebs_index:%llu,pebs_max:%llu,pebs_thred:%llu,pebs_reset[0]:%llu\n",ds->pebs_buffer_base,ds->pebs_index,ds->pebs_absolute_maximum,ds->pebs_interrupt_threshold,ds->pebs_event_reset[0]);
+    printk("dla:%llu %llu\n",pebs_base->dla,(struct pebs_v1*)(pebs_base+sizeof(struct pebs_v1))->dla);
 }
-
 static void __exit clean(void){
     printk(KERN_INFO "Goodbye\n");
 }
