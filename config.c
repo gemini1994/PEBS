@@ -24,6 +24,12 @@ struct pebs_v1 {
     u64 lat;
 };
 
+struct pebs_v2 {
+	struct pebs_v1 v1;
+	u64 eventingip;
+	u64 tsx_tuning;
+};
+
 struct debug_store {
     u64 buffer_base;
     u64 index;
@@ -59,10 +65,18 @@ static int __init config(void){
     rdmsrl(0x191,evtsel5);
     rdmsrl(0x192,evtsel6);
     rdmsrl(0x193,evtsel7);
-    struct pebs_v1 *pebs_base = (struct pebs_v1*)ds->pebs_buffer_base;
-    printk("evtsel: %llu %llu %llu %llu %llu %llu %llu %llu\n",evtsel0,evtsel1,evtsel2,evtsel3,evtsel4,evtsel5,evtsel6,evtsel7);
-    printk("pebs_buffer_base:%llu,pebs_index:%llu,pebs_max:%llu,pebs_thred:%llu,pebs_reset[0]:%llu\n",ds->pebs_buffer_base,ds->pebs_index,ds->pebs_absolute_maximum,ds->pebs_interrupt_threshold,ds->pebs_event_reset[0]);
-    printk("dla:%llu %llu\n",pebs_base->dla,(struct pebs_v1*)(pebs_base+sizeof(struct pebs_v1))->dla);
+    struct pebs_v2 *pebs_base = ds->pebs_buffer_base;
+    printk("evtsel: %llx %llx %llx %llx %llx %llx %llx %llx\n",evtsel0,evtsel1,evtsel2,evtsel3,evtsel4,evtsel5,evtsel6,evtsel7);
+    printk("pebs_buffer_base:%llx,pebs_index:%llx,pebs_max:%llx,pebs_thred:%llx,pebs_reset[0]:%llx\n",ds->pebs_buffer_base,ds->pebs_index,ds->pebs_absolute_maximum,ds->pebs_interrupt_threshold,ds->pebs_event_reset[0]);
+    int num = (ds->pebs_index-ds->pebs_buffer_base)/(sizeof(struct pebs_v2));
+	printk("record num:%d\n",num);
+	int i = 0;
+	while(i<num){
+		u64 tmp = (struct pebs_v2*)(pebs_base+sizeof(struct pebs_v2)*i)->v1.dla;
+		if(tmp)printk("%d: %llx\n",i,tmp);
+		i++;
+	}
+	//printk("dla:%llx %llx\n",pebs_base->dla,(struct pebs_v1*)(pebs_base+sizeof(struct pebs_v1))->dla);
 }
 static void __exit clean(void){
     printk(KERN_INFO "Goodbye\n");

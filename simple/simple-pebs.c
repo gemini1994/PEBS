@@ -70,9 +70,9 @@
 #define EVTSEL_INT BIT(20)
 #define EVTSEL_EN  BIT(22)
 
-#define PEBS_BUFFER_SIZE	(64 * 1024 * 4) /* PEBS buffer size */
-#define OUT_BUFFER_SIZE		(64 * 1024 * 4) /* must be multiple of 4k */
-#define PERIOD 100003
+#define PEBS_BUFFER_SIZE	(64 * 1024 * 4 * 16) /* PEBS buffer size */
+#define OUT_BUFFER_SIZE		(64 * 1024 * 4 * 16) /* must be multiple of 4k */
+#define PERIOD 300
 
 static unsigned pebs_event;
 
@@ -152,7 +152,9 @@ static bool check_cpu(void)
 	case 77: /* Avoton */
 		pebs_event = 0x0c5; /* BR_MISP_RETIRED.ALL_BRANCHES */
 		break;
-
+	case 79:
+		pebs_event = 0x1d1;//l1 hit
+		break;
 	default:
 		pr_err("Unknown CPU model %d\n", model);
 		return false;
