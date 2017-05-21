@@ -37,6 +37,7 @@
 
 #include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/delay.h>
 #include <linux/miscdevice.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -50,8 +51,10 @@
 #include <linux/percpu.h>
 #include <linux/wait.h>
 #include <linux/kallsyms.h>
+#include <linux/proc_fs.h>
 #include <asm/msr.h>
 #include <asm/desc.h>
+#include <asm/uaccess.h>
 #include <cpuid.h>
 #include "simple-pebs.h"
 
@@ -72,7 +75,7 @@
 
 #define PEBS_BUFFER_SIZE	(64 * 1024 * 4 * 16) /* PEBS buffer size */
 #define OUT_BUFFER_SIZE		(64 * 1024 * 4 * 16) /* must be multiple of 4k */
-#define PERIOD 300
+#define PERIOD 1
 
 static unsigned pebs_event;
 
@@ -153,7 +156,7 @@ static bool check_cpu(void)
 		pebs_event = 0x0c5; /* BR_MISP_RETIRED.ALL_BRANCHES */
 		break;
 	case 79:
-		pebs_event = 0x1d1;//l1 hit
+		pebs_event = 0x10d1;//l2 miss
 		break;
 	default:
 		pr_err("Unknown CPU model %d\n", model);
@@ -627,6 +630,39 @@ static struct notifier_block cpu_notifier = {
 	.notifier_call = simple_pebs_cpu,
 };
 
+struct file* file_open(const char* path, int flags, int rights){
+	struct file* filp = NULL;
+	mm_segment_t oldfs;
+	int err = 0;
+
+	oldfs = get_fs();
+	set_fs(get_ds());
+	filp = filp_open(path, flags, rights);
+	set_fs(oldfs);
+	if(IS_ERR(filp)){
+		err = PTR_ERR(filp);
+		return NULL;
+	}
+	return filp;
+}
+
+void file_close(struct file* file){
+	filp_close(file, NULL);
+}
+
+int file_write(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size){
+	mm_segment_t oldfs;
+	int ret;
+
+	oldfs = get_fs();
+	set_fs(get_ds());
+
+	ret = vfs_write(file, data, size, &offset);
+
+	set_fs(oldfs);
+	return ret;
+}
+
 static int simple_pebs_init(void)
 {
 	int err;
@@ -679,14 +715,38 @@ static int simple_pebs_init(void)
     struct pebs_v2 *pebs_base = ds->pebs_base;
     printk("evtsel: %llx %llx %llx %llx %llx %llx %llx %llx\n",evtsel0,evtsel1,evtsel2,evtsel3,evtsel4,evtsel5,evtsel6,evtsel7);
     printk("pebs_buffer_base:%llx,pebs_index:%llx,pebs_max:%llx,pebs_thred:%llx,pebs_reset[0]:%llx\n",ds->pebs_base,ds->pebs_index,ds->pebs_max,ds->pebs_thresh,ds->pebs_reset[0]);
+	msleep(1000);
     int num = (ds->pebs_index-ds->pebs_base)/(sizeof(struct pebs_v2));
 	printk("record num:%d\n",num);
+
+	u64 *record = kmalloc(sizeof(u64)*num,GFP_KERNEL);
 	int i = 0;
 	while(i<num){
+		
+		//struct file* fp;
+		//fp = file_open("home/tmp_pebs.txt",O_RDWR | O_CREAT, 0644);
 		u64 tmp = (struct pebs_v2*)(pebs_base+sizeof(struct pebs_v2)*i)->v1.dla;
-		if(tmp)printk("%d: %llx\n",i,tmp);
+		record[i] = tmp;
+		//loff_t pos = 0;
+		//char *buf = (char *)&tmp;
+		//file_write(fp, tmp, sizeof(tmp), &pos);
 		i++;
 	}
+	int j=0;
+	struct file *fp;
+	mm_segment_t fs;
+	loff_t pos;
+	fp = filp_open("/home/wkuang/xyc/kernel_file.txt", O_RDWR | O_CREAT, 0644);
+	if(IS_ERR(fp)){
+		printk("create file error\n");
+		return err;
+	}
+	fs = get_fs();
+	set_fs(KERNEL_DS);
+	pos = 0;
+	vfs_write(fp, record, sizeof(u64)*num, &pos);
+	filp_close(fp,NULL);
+	set_fs(fs);
 	return 0;
 
 out_notifier:
